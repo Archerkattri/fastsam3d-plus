@@ -7,10 +7,12 @@
 *Skip the dynamics network on most slat-stage solver steps and forecast the cached velocity
 with a scaled-Hermite polynomial. Training-free, geometry-preserving, native (no monkey-patching).*
 
-![training&#8209;free](https://img.shields.io/badge/training--free-%E2%9C%93-2e8f5c)
-&nbsp;![PyTorch](https://img.shields.io/badge/PyTorch-ee4c2c?logo=pytorch&logoColor=white)
-&nbsp;![method HiCache](https://img.shields.io/badge/cache-HiCache%20(Hermite)-2e6db0)
-&nbsp;![upstream Fast--SAM3D](https://img.shields.io/badge/fork%20of-Fast--SAM3D-555)
+[![base: Fast-SAM3D](https://img.shields.io/badge/base-Fast--SAM3D-555)](https://github.com/wlfeng0509/Fast-SAM3D)
+&nbsp;[![base: SAM 3D Objects](https://img.shields.io/badge/base-SAM%203D%20Objects-555)](https://github.com/facebookresearch/sam-3d-objects)
+&nbsp;[![arXiv: Fast-SAM3D](https://img.shields.io/badge/arXiv-2602.05293-b5212f?logo=arxiv)](https://arxiv.org/abs/2602.05293)
+&nbsp;[![arXiv: HiCache](https://img.shields.io/badge/arXiv-2508.16984-b5212f?logo=arxiv)](https://arxiv.org/abs/2508.16984)
+&nbsp;[![license: SAM](https://img.shields.io/badge/license-SAM-2e6db0)](./LICENSE)
+&nbsp;![basis: Hermite polynomial](https://img.shields.io/badge/basis-Hermite%20polynomial-7a5cc6)
 
 </div>
 
