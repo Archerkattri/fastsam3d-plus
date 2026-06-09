@@ -28,7 +28,7 @@ base generator, and the `+` / `++` suffix is a **method choice**, not a rival pr
 | Hunyuan3D-2 mini | `hunyuan2-plus` | `hunyuan2-plus-plus` |
 | SAM 3D Objects | `sam3d-plus` | `sam3d-plus-plus` |
 | Fast-SAM3D | `fastsam3d-plus` | `fastsam3d-plus-plus` |
-| DiT-XL/2 (ImageNet) | `dit-plus` | `dit-plus-plus` |
+| DiT-XL/2 (ImageNet) | `dit-plus` *(unreleased)* | `dit-plus-plus` *(unreleased)* |
 | TRELLIS (v1) | `faster-trellis` | `faster-trellis-plus-plus` |
 | TRELLIS.2-4B (v2) | `hermit-trellis2` | `hermit-trellis2-plus-plus` |
 
@@ -66,7 +66,7 @@ the velocity tree and predicts the velocity `k` steps past the last compute step
 Hermite-weighted sum of those derivatives. The Hermite basis tempers the high-order extrapolation
 that makes a plain Taylor (monomial) cache diverge, so it stays lossless at a larger skip interval
 than TaylorSeer — but, being a **polynomial**, it still drifts as the skip grows. The exponential
-successor that pushes the lossless skip further lives in [`fastsam3d-plus-plus`](../fastsam3d-plus-plus).
+successor that pushes the lossless skip further lives in [`fastsam3d-plus-plus`](https://github.com/Archerkattri/fastsam3d-plus-plus).
 
 ## Enable it (real API)
 
@@ -102,8 +102,8 @@ Under the hood `enable_hicache` stores the config on the Euler solver
 On Fast-SAM3D's slat-stage FlowMatching, **HiCache (Hermite) is geometry-lossless (F1 = 1.000) out
 to interval-3** (~1.4× over the uncached slat schedule). Past interval-3 the polynomial basis
 starts to drift. For the **exponential (DMD) forecaster that holds quality two intervals further**
-on the same FlowMatching substrate, see [`fastsam3d-plus-plus`](../fastsam3d-plus-plus) and the
-standalone library [`hicache-plus-plus`](../hicache-plus-plus).
+on the same FlowMatching substrate, see [`fastsam3d-plus-plus`](https://github.com/Archerkattri/fastsam3d-plus-plus) and the
+standalone library [`hicache-plus-plus`](https://github.com/Archerkattri/hicache-plus-plus).
 
 > The Hermite ⇄ Taylor swap on the SS stage is a wash — that stage already runs a fixed
 > TaylorSeer stride, so the basis change there doesn't move latency. HiCache's gain is on the
@@ -121,8 +121,8 @@ standalone library [`hicache-plus-plus`](../hicache-plus-plus).
 - **HiCache** — scaled-Hermite velocity forecasting, [arXiv:2508.16984](https://arxiv.org/abs/2508.16984).
   This fork is a clean tree-aware reimplementation on Fast-SAM3D's slat flow-matching.
 - **Adaptive-CFG** — Adaptive Guidance, [arXiv:2312.12487](https://arxiv.org/abs/2312.12487).
-- **HiCache++** (the exponential successor) — [`fastsam3d-plus-plus`](../fastsam3d-plus-plus) ·
-  standalone [`hicache-plus-plus`](../hicache-plus-plus).
+- **HiCache++** (the exponential successor) — [`fastsam3d-plus-plus`](https://github.com/Archerkattri/fastsam3d-plus-plus) ·
+  standalone [`hicache-plus-plus`](https://github.com/Archerkattri/hicache-plus-plus).
 
 ## Citation
 
@@ -181,3 +181,12 @@ Model weights and demo/example assets are **not** committed to this repo — onl
 architecture (code + integration). Download the base-model weights from the upstream project,
 [wlfeng0509/Fast-SAM3D](https://github.com/wlfeng0509/Fast-SAM3D), per its instructions, and point the loader at them (see the code / upstream README). This
 keeps the repository lightweight and avoids redistributing third-party weights.
+
+---
+
+## Family
+
+Part of the **HiCache++ acceleration family**.
+
+- **Family hub:** [`hicache-plus-plus`](https://github.com/Archerkattri/hicache-plus-plus) — the basis library behind this adapter.
+- **Sibling:** [`fastsam3d-plus-plus`](https://github.com/Archerkattri/fastsam3d-plus-plus) — the same base model with the HiCache++ (Dynamic Mode Decomposition / Prony) exponential-forecast variant.
