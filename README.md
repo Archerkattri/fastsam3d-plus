@@ -108,6 +108,26 @@ standalone library [`hicache-plus-plus`](https://github.com/Archerkattri/hicache
 > TaylorSeer stride, so the basis change there doesn't move latency. HiCache's gain is on the
 > **slat** stage, where it forecasts the skipped velocities.
 
+
+### Sign-convention update (2026-06-10)
+
+The vendored Hermite forecast evaluated the basis at `x = -k`; the corrected convention from
+[hicache-plus-plus 1.2.0](https://github.com/Archerkattri/hicache-plus-plus) is `x = +k` (the
+upstream TaylorSeer distance convention; `-k` flips every odd-order term, extrapolating
+backwards). This fork now ships the corrected forecast in both Hermite sites
+(`flow_matching/accel.py`, the slat-stage forecaster, and `forecast_basis.py`, the pluggable
+SS-stage basis). The published numbers above were measured with the as-released code and
+remain valid as-measured.
+
+The slat-stage result has been re-validated with the corrected forecast on the published
+protocol (this repo's runnable `InferencePipelinePointMap`, real weights, seed 42, F1\@0.05
+vs the uncached baseline): corrected HiCache i3/o2 stays F1 = 1.000 (CD 0.0121 vs 0.0125
+as-released), and wider probes i5/o3 and i6/o3 also hold F1 = 1.000 under both conventions.
+Verdict: same at the published interval. The corrected-vs-as-released table is in
+[`sam3d-plus`](https://github.com/Archerkattri/sam3d-plus#sign-convention-update-2026-06-10)
+(identical vendored port, same harness). Re-validation of the SS-stage Taylor-vs-Hermite wash
+with the corrected basis is pending.
+
 ## Attribution
 
 - **Fast-SAM3D** — © [wlfeng0509](https://github.com/wlfeng0509/Fast-SAM3D)
