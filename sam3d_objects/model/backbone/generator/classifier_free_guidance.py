@@ -131,6 +131,21 @@ class ClassifierFreeGuidance(torch.nn.Module):
         if getattr(self, "_adacfg_cfg", None) is not None:
             self._adacfg = adaptive_cfg_init(num_steps=num_steps, **self._adacfg_cfg)
 
+    def get_adaptive_guidance_telemetry(self):
+        """Return actual CFG full/skip counts without exposing cached tensor anchors."""
+        if getattr(self, "_adacfg_cfg", None) is None:
+            return {"status": "disabled", "n_full": 0, "n_skip": 0}
+        state = getattr(self, "_adacfg", None)
+        if state is None:
+            return {"status": "enabled_not_started", "n_full": 0, "n_skip": 0}
+        return {
+            "status": "active",
+            "step": int(state["step"]),
+            "n_full": int(state["n_full"]),
+            "n_skip": int(state["n_skip"]),
+            "last_gamma": state["last_gamma"],
+        }
+
     def inner_forward(self, x, t, is_cond, strength, *args_cond, **kwargs_cond):
         y_cond = self.backbone(x, t, *args_cond, **kwargs_cond)
 

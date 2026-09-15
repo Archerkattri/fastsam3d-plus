@@ -17,9 +17,14 @@ dynamic = ["dependencies", "optional-dependencies"]
 
 [tool.hatch.build]
 ignore-vcs = true
-include = ["**/*.py"]
+include = ["**/*.py", "forecast_basis.py"]
 exclude = ["conftest.py", "*_test.py"]
-packages = ["sam3d_objects"]
+# The FlowMatching model imports these sibling implementation packages at module load.
+# Include them so a wheel-installed solver/model smoke does not depend on the source checkout.
+packages = ["sam3d_objects", "faster_utils_slat", "taylor_utils_slat", "token_slat"]
+
+[tool.hatch.build.targets.wheel]
+force-include = {"forecast_basis.py" = "forecast_basis.py"}
 
 [tool.hatch.metadata.hooks.requirements_txt]
 files = ["requirements.txt"]

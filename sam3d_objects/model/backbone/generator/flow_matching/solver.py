@@ -3,11 +3,13 @@ import optree
 import torch
 from functools import partial
 import time
+import uuid
 from sam3d_objects.data.utils import tree_tensor_map
 from .accel import (
     hicache_init, hicache_decide, hicache_update_tree, hicache_forecast_tree,
-    tree_detach,
+    hicache_telemetry, tree_detach,
 )
+from hicache_pp import CacheBudget, CacheBudgetRuntime, RunIdentity, stable_digest
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -39,17 +41,73 @@ def simple_dynamics(x, t):
 
 class ODESolver:
     def enable_hicache(self, interval=4, max_order=1, first_enhance=2, end_enhance=None,
-                       sigma=0.5):
+                       sigma=0.5, budget=None, max_horizon=None, max_memory_mb=None,
+                       audit_budget=0):
         """HiCache (Hermite-polynomial velocity forecasting, arXiv:2508.16984) on the EULER
         solver — forecast the velocity on skipped steps instead of calling dynamics_fn.
         Training-free; native (no monkey-patching)."""
         self._hicache_cfg = dict(interval=interval, max_order=max_order, first_enhance=first_enhance,
                                  end_enhance=end_enhance, sigma=sigma)
+        self._hicache_budget = budget or CacheBudget(
+            backend="hermite", allowed_stages=("slat-flow",),
+            max_horizon=max(1, interval - 1) if max_horizon is None else max_horizon,
+            quality_preset="adapter-default", max_memory_mb=max_memory_mb,
+            audit_budget=audit_budget, fallback="full",
+        )
         return self
 
     def disable_hicache(self):
         self._hicache_cfg = None
+        self._hicache_budget = None
         return self
+
+    def get_hicache_telemetry(self):
+        """Return current or last-run cache telemetry, including unsupported-solver status."""
+        if getattr(self, "_hicache", None) is not None:
+            return hicache_telemetry(self._hicache)
+        return getattr(self, "_last_hicache_telemetry", None)
+
+    def get_hicache_manifest(self):
+        """Return the latest identity-bound budget manifest, if available."""
+        runtime = getattr(self, "_hicache_runtime", None)
+        if runtime is not None:
+            return runtime.manifest.as_dict()
+        return getattr(self, "_last_hicache_manifest", None)
+
+    @staticmethod
+    def _tree_signature(value):
+        leaves = [leaf for leaf in optree.tree_flatten(
+            value, is_leaf=lambda item: isinstance(item, torch.Tensor)
+        )[0] if isinstance(leaf, torch.Tensor)]
+        shapes = [tuple(int(dim) for dim in leaf.shape) for leaf in leaves]
+        first = leaves[0] if leaves else None
+        return shapes, (str(first.dtype) if first is not None else "unknown"), (str(first.device) if first is not None else "unknown")
+
+    def _make_hicache_runtime(self, state, x_init, times):
+        state.setdefault("run_id", uuid.uuid4().hex)
+        shapes, dtype, device = self._tree_signature(x_init)
+        identity = RunIdentity(
+            model_id=type(self).__name__, run_id=str(state["run_id"]),
+            schedule_digest=stable_digest([float(value) for value in times]),
+            cfg_branch="cfg-combined", conditioning_id="cfg-combined", stage="slat-flow",
+            token_layout_digest=stable_digest({"shapes": shapes}), dtype=dtype, device=device,
+            batch_id=stable_digest({"shapes": shapes, "dtype": dtype, "device": device}),
+        )
+        return CacheBudgetRuntime(
+            self._hicache_budget, identity,
+            source_digest=stable_digest({"adapter": "fastsam3d-plus", "contract": "budget-v1"}),
+            config_digest=self._hicache_budget.digest,
+        )
+
+    @staticmethod
+    def _tree_memory_mb(value):
+        leaves = [leaf for leaf in optree.tree_flatten(
+            value, is_leaf=lambda item: isinstance(item, torch.Tensor)
+        )[0] if isinstance(leaf, torch.Tensor)]
+        for leaf in leaves:
+            if leaf.is_cuda:
+                return float(torch.cuda.memory_allocated(leaf.device)) / (1024.0 * 1024.0)
+        return None
 
     def step(self, dynamics_fn, x_t, t, dt, *args, **kwargs):
         raise NotImplementedError
@@ -58,12 +116,33 @@ class ODESolver:
         cfg = getattr(self, "_hicache_cfg", None)
         self._hicache = (hicache_init(num_steps=len(times) - 1, **cfg)
                          if cfg is not None and type(self) is Euler else None)
+        self._hicache_runtime = (
+            self._make_hicache_runtime(self._hicache, x_init, times)
+            if self._hicache is not None else None
+        )
+        self._last_hicache_telemetry = None
+        self._last_hicache_manifest = None
+        if cfg is not None and type(self) is not Euler:
+            self._last_hicache_telemetry = {
+                "status": "unsupported_solver",
+                "solver": type(self).__name__,
+                "decisions": {"full": 0, "forecast": 0},
+                "method_counts": {},
+                "fallbacks": {"unsupported_solver": 1},
+            }
         x_t = x_init
-        for t0, t1 in zip(times[:-1], times[1:]):
-            dt = t1 - t0
-            x_t, v = self.step(dynamics_fn, x_t, t0, dt, *args, **kwargs)
-            yield x_t, t0 ,v
-        self._hicache = None
+        try:
+            for t0, t1 in zip(times[:-1], times[1:]):
+                dt = t1 - t0
+                x_t, v = self.step(dynamics_fn, x_t, t0, dt, *args, **kwargs)
+                yield x_t, t0, v
+        finally:
+            if self._hicache is not None:
+                self._last_hicache_telemetry = hicache_telemetry(self._hicache)
+            if self._hicache_runtime is not None:
+                self._last_hicache_manifest = self._hicache_runtime.manifest.as_dict()
+            self._hicache = None
+            self._hicache_runtime = None
 
     def solve(self, dynamics_fn, x_init, times, *args, **kwargs):
         for x_t, _, _, in self.solve_iter(dynamics_fn, x_init, times, *args, **kwargs):
@@ -75,16 +154,42 @@ class ODESolver:
 class Euler(ODESolver):
     def step(self, dynamics_fn, x_t, t, dt, *args, **kwargs):
         hc = getattr(self, "_hicache", None)
-        if hc is not None and hicache_decide(hc) == "forecast":
+        budget_runtime = getattr(self, "_hicache_runtime", None)
+        timer = time.perf_counter()
+        decision = hicache_decide(hc) if hc is not None else "full"
+        budget_decision = None
+        if hc is not None and budget_runtime is not None:
+            budget_decision = budget_runtime.decide(
+                "slat-flow",
+                horizon=int(hc.get("counter", 0)) if decision == "forecast" else 0,
+                method="hermite", supported=True,
+                memory_mb=self._tree_memory_mb(x_t),
+            )
+            if budget_decision.mode == "fallback" and budget_decision.method == "full" and decision == "forecast":
+                hc["counter"] = 0
+                hc["activated_steps"].append(hc["step"])
+                decisions = hc["telemetry"]["decisions"]
+                decisions["forecast"] = max(0, int(decisions.get("forecast", 0)) - 1)
+                decisions["full"] = int(decisions.get("full", 0)) + 1
+                decision = "full"
+        if decision == "forecast":
             # forecast the velocity tree from cached anchors; skip dynamics_fn (the DiT).
             velocity = hicache_forecast_tree(hc)
             hc["step"] += 1
+            if budget_runtime is not None:
+                budget_runtime.record_measurement(
+                    "slat-flow", "hermite", wall_time_ms=(time.perf_counter() - timer) * 1000.0,
+                )
         else:
             velocity = dynamics_fn(x_t, t, *args, **kwargs)
             if hc is not None:
                 vdet = tree_detach(velocity)
                 hicache_update_tree(hc, vdet)
                 hc["step"] += 1
+            if budget_runtime is not None:
+                budget_runtime.record_measurement(
+                    "slat-flow", "full", wall_time_ms=(time.perf_counter() - timer) * 1000.0,
+                )
         x_tp1 = linear_approximation_step(x_t, dt, velocity)
         return x_tp1, velocity
 

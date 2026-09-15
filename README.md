@@ -80,7 +80,26 @@ The cache attaches to the slat-stage `FlowMatching` generator's Euler solver. Th
 chainable (they return the model):
 
 ```python
-# `fm` is the slat-stage FlowMatching generator inside the Fast-SAM3D pipeline.
+from argparse import Namespace
+from pathlib import Path
+import sys
+from omegaconf import OmegaConf
+
+# Run from this repository after installing Fast-SAM3D's inference dependencies.
+repo = Path.cwd()
+sys.path.insert(0, str(repo / "notebook"))
+from inference import Inference
+config = OmegaConf.load(repo / "checkpoints/hf/pipeline.yaml")
+config.workspace_dir = str(repo / "checkpoints/hf")
+config["ss_generator_config_path"] = "ss_generator_taylorseer.yaml"
+config["slat_generator_config_path"] = "slat_generator_taylorseer.yaml"
+args = Namespace(enable_taylor=True, enable_ss_faster=False, enable_slat_token=False,
+                 enable_mesh_aggregation=False, enable_acceleration=False, enable_easy=False,
+                 ss_faster_stride=3, ss_warmup=2, ss_order=1, ss_momentum_beta=0.5,
+                 slat_thresh=0.5, slat_warmup=2, slat_token_ratio=0.15,
+                 mesh_spectral_threshold_low=0.5, mesh_spectral_threshold_high=0.7)
+inference = Inference(config, compile=False, args=args)
+fm = inference._pipeline.models["slat_generator"]  # the SLaT FlowMatching generator
 
 # HiCache: forecast the velocity on skipped slat steps with the scaled-Hermite polynomial.
 fm.enable_hicache(
@@ -90,10 +109,15 @@ fm.enable_hicache(
     end_enhance=None,  # always run full for the final steps (defaults to the last step)
     sigma=0.5,         # Hermite scale σ ∈ (0,1)
 )
+# Optional CFG-only acceleration on the same SLaT generator. The SS PointmapCFG path
+# is not counted as supported by this baseline unless it exposes these methods.
+fm.reverse_fn.enable_adaptive_guidance(gamma_bar=0.94, warmup=2, max_order=1)
 
 # ... run the pipeline / sampler as usual ...
 
 fm.disable_hicache()   # back to the dense (uncached) schedule
+telemetry = fm.get_hicache_telemetry()  # actual full/forecast counts after a run
+cfg_telemetry = fm.reverse_fn.get_adaptive_guidance_telemetry()
 ```
 
 Under the hood `enable_hicache` stores the config on the Euler solver
@@ -102,14 +126,19 @@ Under the hood `enable_hicache` stores the config on the Euler solver
 [`accel.py`](sam3d_objects/model/backbone/generator/flow_matching/accel.py),
 [`solver.py`](sam3d_objects/model/backbone/generator/flow_matching/solver.py), and
 [`model.py`](sam3d_objects/model/backbone/generator/flow_matching/model.py).
+Caching is supported only for the exact `Euler` solver and this SLaT generator; other solver
+types remain dense and report `unsupported_solver` through telemetry. The SS stage's native
+TaylorSeer/carving path is not changed by this switch.
 
 ## Results
 
-On Fast-SAM3D's slat-stage FlowMatching, **HiCache (Hermite) is geometry-lossless (F1 = 1.000) out
-to interval-3** (~1.4× over the uncached slat schedule). Past interval-3 the polynomial basis
-starts to drift. For the **exponential (DMD) forecaster that holds quality two intervals further**
-on the same FlowMatching substrate, see [`fastsam3d-plus-plus`](https://github.com/Archerkattri/fastsam3d-plus-plus) and the
-standalone library [`hicache-plus-plus`](https://github.com/Archerkattri/hicache-plus-plus).
+This repository is a Hermite reference implementation, not a universal speed winner. The
+versioned [`benchmarks/fastsam3d-plus.json`](benchmarks/fastsam3d-plus.json) card records the
+available single-input historical result: F1@0.05 remained 1.000, while Hermite measured
+0.922× the Taylor baseline speed in that run. Treat those values as configuration- and
+input-specific; rerun the portable harness before making a timing claim. For the exponential
+DMD variant, see [`fastsam3d-plus-plus`](https://github.com/Archerkattri/fastsam3d-plus-plus) and
+the standalone library [`hicache-plus-plus`](https://github.com/Archerkattri/hicache-plus-plus).
 
 > The Hermite ⇄ Taylor swap on the SS stage is a wash — that stage already runs a fixed
 > TaylorSeer stride, so the basis change there doesn't move latency. HiCache's gain is on the
@@ -126,11 +155,9 @@ backwards). This fork now ships the corrected forecast in both Hermite sites
 SS-stage basis). The published numbers above were measured with the as-released code and
 remain valid as-measured.
 
-The slat-stage result has been re-validated with the corrected forecast on the published
-protocol (this repo's runnable `InferencePipelinePointMap`, real weights, seed 42, F1\@0.05
-vs the uncached baseline): corrected HiCache i3/o2 stays F1 = 1.000 (CD 0.0121 vs 0.0125
-as-released), and wider probes i5/o3 and i6/o3 also hold F1 = 1.000 under both conventions.
-Verdict: same at the published interval. The corrected-vs-as-released table is in
+The checked-in single-input artifact is bound to its own commit, input, seed, threshold, and
+timing scope in the manifest. It is not a multi-seed or current-commit release benchmark.
+The corrected-vs-as-released table is in
 [`sam3d-plus`](https://github.com/Archerkattri/sam3d-plus#sign-convention-update-2026-06-10)
 (identical vendored port, same harness). Re-validation of the SS-stage Taylor-vs-Hermite wash
 with the corrected basis is pending.
@@ -216,3 +243,9 @@ Part of the **HiCache++ acceleration family**.
 
 - **Family hub:** [`hicache-plus-plus`](https://github.com/Archerkattri/hicache-plus-plus) — the basis library behind this adapter.
 - **Sibling:** [`fastsam3d-plus-plus`](https://github.com/Archerkattri/fastsam3d-plus-plus) — the same base model with the HiCache++ (Dynamic Mode Decomposition / Prony) exponential-forecast variant.
+
+## Current release status
+
+The current adapter includes shared HiCache++ cache identity, timing and
+fallback accounting. Eight CPU contract tests pass. GPU model execution,
+segmentation quality and end-to-end speed comparisons remain unmeasured.

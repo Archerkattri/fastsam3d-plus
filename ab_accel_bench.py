@@ -28,7 +28,7 @@ alignment needed; score in a shared unit cube (symmetric Chamfer + F1@0.05).
 
 GPU required. Run once the GPU is free (e.g. after the Toys4K bench finishes):
 
-    python third_party/Fast-SAM3D/ab_accel_bench.py --tag hf --mask-index 14 --gpu 0
+    python ab_accel_bench.py --tag hf --mask-index 14 --gpu 0
     # add more inputs:  --images notebook/images/<dir1> notebook/images/<dir2> ...
 """
 from __future__ import annotations
@@ -44,11 +44,26 @@ from pathlib import Path
 import numpy as np
 
 FASTSAM3D_ROOT = Path(__file__).resolve().parent
-REPO_ROOT = FASTSAM3D_ROOT.parents[1]                 # third_party/Fast-SAM3D -> gaussianfeels
+_METRICS = None
 
-# the established F@0.05 metric (numpy/scipy only)
-sys.path.insert(0, str(REPO_ROOT / "third_party" / "benchmark"))
-import metrics as M  # noqa: E402
+
+def _load_metrics():
+    """Load the optional geometry scorer without assuming a monorepo layout."""
+    candidates = []
+    configured = os.environ.get("FASTSAM3D_METRICS_PATH")
+    if configured:
+        path = Path(configured).expanduser().resolve()
+        candidates.append(path if path.is_dir() else path.parent)
+    candidates.extend((FASTSAM3D_ROOT / "benchmark", FASTSAM3D_ROOT / "benchmarks"))
+    for directory in candidates:
+        if (directory / "metrics.py").exists():
+            sys.path.insert(0, str(directory))
+            import metrics
+            return metrics
+    raise RuntimeError(
+        "geometry scoring needs metrics.py; set FASTSAM3D_METRICS_PATH to its "
+        "directory (see benchmarks/fastsam3d-plus.json)"
+    )
 
 # the 4 configs and the baseline they are scored against
 CONFIGS = [("taylor", False), ("hermite", False), ("taylor", True), ("hermite", True)]
@@ -116,6 +131,10 @@ def set_adacfg(inference, on: bool, gamma_bar=0.94, warmup=2, max_order=1) -> in
 # ──────────────────────────── run one config ─────────────────────────────────
 def extract_points(output, n: int = 30000) -> np.ndarray:
     """Unit-cube-normalised surface points: prefer the mesh (glb), else splat xyz."""
+    global _METRICS
+    if _METRICS is None:
+        _METRICS = _load_metrics()
+    M = _METRICS
     glb = output.get("glb") if isinstance(output, dict) else None
     if glb is not None and getattr(glb, "vertices", None) is not None and len(glb.vertices):
         v = np.asarray(glb.vertices, np.float64)
@@ -169,6 +188,7 @@ def discover_images(images_arg, mask_index: int):
 
 # ──────────────────────────── main ───────────────────────────────────────────
 def main() -> None:
+    global _METRICS
     ap = argparse.ArgumentParser()
     ap.add_argument("--tag", default="hf")
     ap.add_argument("--images", nargs="*", default=None, help="image dirs (default: notebook/images/*)")
@@ -184,6 +204,7 @@ def main() -> None:
     sys.path.insert(0, str(FASTSAM3D_ROOT))               # forecast_basis, taylor_utils_*
     sys.path.insert(0, str(FASTSAM3D_ROOT / "notebook"))  # inference.py lives here
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
+    _METRICS = _load_metrics()
 
     # Inline the two trivial loaders instead of `from inference import ...`, which would
     # drag in notebook/inference.py's gradio/seaborn/matplotlib demo deps we don't need.
@@ -230,7 +251,7 @@ def main() -> None:
                 base_pts = pts
                 cd = 0.0; f1 = 1.0
             elif base_pts is not None:
-                cd, f1, _, _ = M.chamfer_and_f1(pts, base_pts, 0.05)
+                cd, f1, _, _ = _METRICS.chamfer_and_f1(pts, base_pts, 0.05)
             else:
                 cd = float("nan"); f1 = float("nan")
             row = dict(object=name, basis=basis, adacfg=adacfg, config=_label(basis, adacfg),

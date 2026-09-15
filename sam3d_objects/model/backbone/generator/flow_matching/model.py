@@ -90,6 +90,19 @@ class FlowMatching(Base):
     def disable_hicache(self):
         self._solver.disable_hicache(); return self
 
+    def get_hicache_telemetry(self):
+        """Return current or last-run cache telemetry from the flow solver."""
+        return self._solver.get_hicache_telemetry()
+
+    def get_hicache_manifest(self):
+        """Return the latest identity-bound budget manifest."""
+        return self._solver.get_hicache_manifest()
+
+    def get_adaptive_guidance_telemetry(self):
+        """Return actual CFG full/skip counts for the current SLaT trajectory."""
+        getter = getattr(self.reverse_fn, "get_adaptive_guidance_telemetry", None)
+        return getter() if getter is not None else {"status": "unsupported"}
+
     def _get_solver(self, solver_method, solver_kwargs):
         if solver_method in FlowMatching.SOLVER_METHODS:
             solver = FlowMatching.SOLVER_METHODS[solver_method](**solver_kwargs)

@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "name": "fastsam3d-plus-hermite-baseline",
+  "status": "historical-single-input-result",
+  "entrypoint": "ab_accel_bench.py",
+  "purpose": "GPU A/B reference for the Fast-SAM3D SLaT Hermite baseline.",
+  "gpu_required": true,
+  "source_commit": "f3d59ba",
+  "current_checkout_commit_at_packet_start": "94e65c39b28adb2c52e1851c6931393d5c95f2b5",
+  "input": {
+    "dataset": "single paired repository image directory",
+    "object": "shutterstock_stylish_kidsroom_1640806567",
+    "mask_index": 14,
+    "input_count": 1,
+    "seed_count": 1,
+    "points_per_output": 30000
+  },
+  "quality_target": "symmetric Chamfer and F1@0.05 versus uncached Taylor baseline",
+  "timing_scope": "one warmed, CUDA-synchronized generation; model load excluded",
+  "configs": [
+    {"basis": "taylor", "adaptive_cfg": false},
+    {"basis": "hermite", "adaptive_cfg": false},
+    {"basis": "taylor", "adaptive_cfg": true},
+    {"basis": "hermite", "adaptive_cfg": true}
+  ],
+  "observed_summary_artifact": "ab_accel_out/summary.json",
+  "observed_result": {
+    "hermite_speedup_vs_baseline": 0.922,
+    "hermite_mean_f1_vs_baseline": 1.0,
+    "hermite_mean_cd_vs_baseline": 0.01623
+  },
+  "metrics": {
+    "module": "metrics.py",
+    "environment_variable": "FASTSAM3D_METRICS_PATH",
+    "required_function": "chamfer_and_f1"
+  },
+  "command": "python ab_accel_bench.py --tag hf --mask-index 14 --gpu 0",
+  "outputs": ["ab_accel_out/cells.json", "ab_accel_out/summary.json"],
+  "scope": {
+    "slat_basis": true,
+    "ss_taylorseer_basis_switch": "not a speed claim",
+    "universal_basis_winner": false,
+    "model_benchmark_rerun_in_packet": false
+  }
+}

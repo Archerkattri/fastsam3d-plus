@@ -23,6 +23,7 @@ is NO runtime monkey-patching. The Hermite/finite-difference scalar coefficients
 are identical across all leaves, so a forecast is one ``tree_map`` per order.
 """
 import math
+from copy import deepcopy
 from typing import Any, Dict, List, Optional, Tuple
 
 import torch
@@ -95,18 +96,29 @@ def hicache_init(num_steps, interval=4, max_order=1, first_enhance=2,
         "sigma": float(sigma),
         "step": 0, "counter": 0,
         "activated_steps": [], "derivatives": {}, "prev_derivatives": {},
+        "telemetry": {
+            "status": "active",
+            "decisions": {"full": 0, "forecast": 0},
+            "method_counts": {"hermite": 0},
+            "fallbacks": {},
+        },
     }
 
 
 def hicache_decide(state: Dict[str, Any]) -> str:
     step = state["step"]
     if step < state["first_enhance"] or step >= state["end_enhance"] \
+            or not state["derivatives"] \
             or state["counter"] >= state["interval"] - 1:
         state["counter"] = 0
         state["activated_steps"].append(step)
-        return "full"
-    state["counter"] += 1
-    return "forecast"
+        decision = "full"
+    else:
+        state["counter"] += 1
+        decision = "forecast"
+    decisions = state["telemetry"]["decisions"]
+    decisions[decision] = int(decisions.get(decision, 0)) + 1
+    return decision
 
 
 def hicache_update_tree(state: Dict[str, Any], velocity_tree: Any) -> None:
@@ -126,7 +138,11 @@ def hicache_update_tree(state: Dict[str, Any], velocity_tree: Any) -> None:
 def hicache_forecast_tree(state: Dict[str, Any]) -> Any:
     deriv = state["derivatives"]
     if 0 not in deriv:
+        state["telemetry"]["fallbacks"]["missing_anchor"] = (
+            state["telemetry"]["fallbacks"].get("missing_anchor", 0) + 1
+        )
         raise RuntimeError("hicache_forecast_tree called before any compute step")
+    state["telemetry"]["method_counts"]["hermite"] += 1
     k = state["step"] - state["activated_steps"][-1]
     result = deriv[0]
     order = 1
@@ -134,6 +150,11 @@ def hicache_forecast_tree(state: Dict[str, Any]) -> Any:
         result = tree_axpy(hermite_coeff(order, k, state["sigma"]), result, deriv[order])
         order += 1
     return result
+
+
+def hicache_telemetry(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a detached snapshot of decisions, methods, and fallback reasons."""
+    return deepcopy(state.get("telemetry", {}))
 
 
 # --------------------------------------------------------------------------- #
