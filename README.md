@@ -23,16 +23,13 @@ with a scaled-Hermite polynomial. Training-free, geometry-preserving, native (no
 
 </div>
 
-## When to use this repo
-## Architecture at a glance
-
-![fastsam3d-plus architecture](assets/readme_flow.svg)
-
-The cache lives inside the SLaT flow loop and preserves the structured velocity tree while replacing selected dynamics evaluations with Hermite forecasts.
+## Pipeline and measured evidence
 
 ![Fast-SAM3D + pipeline](assets/pipeline.png)
 
 ![Fast-SAM3D + measured speedup](assets/speedup.png)
+
+## When to use this repo
 
 These repos are **complementary accelerators, not competing solutions** — each speeds up a *different*
 base generator, and the `+` / `++` suffix is a **method choice**, not a rival product. Pick by
