@@ -282,7 +282,11 @@ if __name__ == "__main__":
     sc2 = hicache_init(num_steps=12, interval=4, max_order=1, first_enhance=2, end_enhance=10, sigma=0.5)
     seq = []
     for s in range(12):
-        sc2["step"] = s; seq.append(hicache_decide(sc2))
+        sc2["step"] = s
+        decision = hicache_decide(sc2)
+        seq.append(decision)
+        if decision == "full":
+            hicache_update_tree(sc2, const)
     check("cadence: 0,1 full; 2 forecast; 5 full; 10,11 full",
           seq[0] == "full" and seq[1] == "full" and seq[2] == "forecast" and seq[5] == "full"
           and seq[10] == "full" and seq[11] == "full")

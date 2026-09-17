@@ -1,6 +1,9 @@
 """CPU regressions for the Fast-SAM3D Hermite baseline adapter."""
 
 import importlib.util
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -100,3 +103,23 @@ def test_benchmark_import_is_portable_and_missing_metrics_is_actionable(monkeypa
     monkeypatch.delenv("FASTSAM3D_METRICS_PATH", raising=False)
     with pytest.raises(RuntimeError, match="FASTSAM3D_METRICS_PATH"):
         bench._load_metrics()
+
+
+def test_acceleration_module_selftest_passes_outside_checkout(tmp_path):
+    root = Path(__file__).parents[1]
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = str(root)
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "sam3d_objects.model.backbone.generator.flow_matching.accel",
+        ],
+        cwd=tmp_path,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "ALL TESTS PASSED" in completed.stdout
