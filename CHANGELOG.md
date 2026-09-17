@@ -3,6 +3,19 @@
 All notable changes, per version. Auto-generated from git tags by
 `third_party/launch_materials/gen_changelogs.sh`; do not edit by hand.
 
+## v0.0.2 — 2026-09-17
+
+- Fix accel selftest cadence; add out-of-checkout regression test (9e208af)
+- Enforce LF line endings with .gitattributes (69fd3b3)
+- docs: replace interim README visuals (87b49eb)
+- docs: refresh README visuals (3cb3ad8)
+- wip: release readiness pass (1baa026)
+- ci: update actions to Node 24 runtimes (94e65c3)
+- ci: add clean package integrity checks (6db43f3)
+- README: live GitHub downloads badge (a02d0a3)
+- README: release/license badges (a5f6754)
+- docs: sort CHANGELOG under version headers (f6f4145)
+
 ## v0.0.1 — 2026-06-11
 
 - docs: add per-version CHANGELOG (a1586e7)
